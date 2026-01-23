@@ -1,0 +1,315 @@
+Internet-Draft                                       Ted Nyman, Cased
+Intended status: Informational                           January 2026
+Expires: July 2026
+
+             git-atrace: AI Session Attribution for Git
+
+Status of This Memo
+
+   This memo provides information for the Internet community.  It does
+   not specify an Internet standard of any kind.  Distribution of this
+   memo is unlimited.
+
+Abstract
+
+   This document specifies a method for capturing AI coding assistant
+   session transcripts and associating them with Git commits.  The
+   system preserves developer privacy by storing all data locally by
+   default, requiring explicit action to share.
+
+Table of Contents
+
+   1. Introduction .................................................. 1
+   2. Terminology ................................................... 2
+   3. Architecture .................................................. 2
+   4. Session Storage Format ........................................ 3
+   5. Commit Attribution ............................................ 4
+      5.5. Line-Level Attribution (Informational) ................... 5
+   6. Privacy Model ................................................. 5
+   7. Security Considerations ....................................... 6
+   8. References .................................................... 6
+
+1. Introduction
+
+   When AI coding assistants generate or modify source code, the
+   conversational context that produced those changes is typically
+   lost.  The resulting code is separated from the intent and
+   reasoning that guided its creation.
+
+   git-atrace addresses this by:
+
+   (a) Capturing the full conversation transcript when AI tools
+       perform file edit operations
+
+   (b) Tracking which files were modified during each session
+
+   (c) Providing a mechanism to link sessions to Git commits using
+       Git notes
+
+   (d) Maintaining user privacy and security by keeping all data
+       local until explicitly shared
+
+   This specification complements git-blame, not replaces it.  It
+   captures process provenance, not authorship claims.
+
+2. Terminology
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in
+   this document are to be interpreted as described in RFC 2119.
+   These terms provide intra-document guidance for implementations.
+
+   Session
+      A single conversation between a user and an AI coding assistant,
+      identified by a UUID.
+
+   Session ID
+      A UUID (e.g., 3ea80c57-6b85-4ca6-bec1-d6d471d207e2) that
+      uniquely identifies a session.  Commands MAY accept abbreviated
+      forms (first 8 characters).
+
+   Transcript
+      A JSONL-formatted log of all messages exchanged during a session.
+
+   Local Storage
+      Data stored within .git/trace/ which is not tracked by Git.
+
+   Shared Storage
+      Data stored in a tracked directory, enabling sharing with
+      collaborators.  The location is determined by configuration
+      (see Section 3.2).
+
+3. Architecture
+
+3.1. Session Capture
+
+   Session capture is triggered by a hook invoked after file-editing
+   operations.  The hook MUST be invoked when any file-modifying
+   operation occurs (e.g., file creation, editing, or multi-file
+   edits).
+
+   Note: Tool names such as "Edit", "Write", and "MultiEdit" are
+   illustrative.  Implementations MAY map equivalent operations from
+   their respective AI assistant APIs.
+
+   Upon invocation, the hook receives a JSON payload via stdin
+   containing:
+
+      {
+        "session_id": "<uuid>",
+        "transcript_path": "<path-to-jsonl>",
+        "tool_name": "<operation-name>",
+        "tool_input": {
+          "file_path": "<path-to-edited-file>"
+        }
+      }
+
+   For operations affecting multiple files, the hook is invoked once
+   per operation.  Implementations MUST extract all file paths from
+   tool_input and record each in the manifest.
+
+   The hook MUST:
+
+   (a) Copy the transcript to local storage
+   (b) Append the edited file path(s) to the session's file manifest
+   (c) Update the session timestamp
+
+3.2. Storage Locations
+
+   Local storage path:    .git/trace/sessions/
+
+   Shared storage path is determined by the following precedence:
+
+   (a) Explicit configuration via git config atrace.sharedir
+   (b) .agents/sessions/ if .agents/ directory exists
+   (c) Not configured (sharing disabled)
+
+   The .agents/ directory is recognized as an emerging convention for
+   AI tooling metadata.  By detecting its presence, git-atrace avoids
+   creating additional dot-directories in repositories that already
+   use this convention.
+
+   If no shared storage is configured, the share command MUST fail
+   with an informative message directing the user to configure a
+   location.
+
+3.3. Network Operations
+
+   git-atrace itself performs no network operations.  Any network
+   activity (pushing, fetching) is delegated to Git tooling that the
+   user explicitly invokes.
+
+4. Session Storage Format
+
+4.1. Transcript File
+
+   Filename: {session_id}.jsonl
+
+   Format: JSON Lines (newline-delimited JSON)
+
+   Each line represents a message with the following structure:
+
+      {
+        "type": "user" | "assistant",
+        "timestamp": "<ISO8601>",
+        "message": { ... }
+      }
+
+   The message schema is assistant-defined and opaque to git-atrace.
+   Consumers MUST NOT assume structure beyond type, timestamp, and
+   ordering.
+
+4.2. File Manifest
+
+   Filename: {session_id}.files
+
+   Format: Newline-delimited list of file paths, relative to the
+   repository root.
+
+   Example:
+
+      src/auth.py
+      src/login.py
+
+   Implementations MUST NOT add duplicate entries.  Paths SHOULD be
+   relative to enable portability across clones and environments.
+
+4.3. Timestamp File
+
+   Filename: {session_id}.timestamp
+
+   Format: ISO8601 timestamp
+
+   Contains the timestamp of the most recent edit operation in the
+   session.
+
+5. Commit Attribution
+
+5.1. Git Notes Reference
+
+   Session-to-commit links are stored using Git notes in the
+   reference:
+
+      refs/notes/atrace
+
+   The short name "atrace" (rather than "git-atrace") is chosen for
+   CLI ergonomics.
+
+5.2. Note Format
+
+   Each note contains one or more session IDs, one per line:
+
+      3ea80c57-6b85-4ca6-bec1-d6d471d207e2
+      a1b2c3d4-5e6f-7890-abcd-ef1234567890
+
+5.3. Creating Links
+
+   To link a session to a commit:
+
+      git notes --ref=refs/notes/atrace add -m "<session_id>" <commit>
+
+   To append to an existing note:
+
+      git notes --ref=refs/notes/atrace append -m "<session_id>" <commit>
+
+5.4. Sharing Links
+
+   Notes are local by default.  To share:
+
+      git push origin refs/notes/atrace
+
+   To fetch:
+
+      git fetch origin refs/notes/atrace:refs/notes/atrace
+
+5.5. Line-Level Attribution (Informational)
+
+   The commit linking mechanism enables line-level session attribution
+   by combining git-blame with notes lookup:
+
+      line -> git blame -> commit -> git notes -> session
+
+   This allows tools to display which session last modified each line,
+   similar to git-blame but with session context.  Implementations MAY
+   provide this as a convenience feature.
+
+   Note: This inherits git-blame's semantics ("last touched", not
+   "originally authored") and limitations (reformatting changes
+   ownership, squash/rebase/amend loses attribution as original
+   commits no longer exist).
+
+6. Privacy Model
+
+6.1. Local by Default
+
+   All captured data MUST be stored locally by default.  The
+   following table summarizes the privacy model:
+
+   +----------------+-------------------------+------------------------+
+   | Data Type      | Local Location          | Share Action           |
+   +----------------+-------------------------+------------------------+
+   | Sessions       | .git/trace/sessions/    | git atrace share <id>  |
+   | Commit Links   | refs/notes/atrace       | git push origin <ref>  |
+   +----------------+-------------------------+------------------------+
+
+   Note: Session content (transcripts) and session metadata (commit
+   links) are distinct and may be shared independently.
+
+6.2. Explicit Sharing
+
+   Data MUST NOT be transmitted or made accessible to other users
+   without explicit user action.  Sharing requires:
+
+   (a) For sessions: Running the share command, which copies files
+       to the configured shared storage location (see Section 3.2)
+
+   (b) For commit links: Explicitly pushing the notes reference
+
+6.3. No Default Shared Location
+
+   Implementations MUST NOT create a shared storage directory without
+   explicit user configuration.  This ensures users consciously opt
+   into sharing and choose where shared data resides.
+
+   If a user attempts to share without configuration, the
+   implementation MUST fail and provide guidance on configuration
+   options.
+
+7. Security Considerations
+
+7.1. Sensitive Content
+
+   Session transcripts may contain sensitive information including:
+
+      - Proprietary code discussions
+      - Security vulnerability details
+      - Authentication credentials mentioned in conversation
+      - Internal system architecture
+
+   Users SHOULD review session content before sharing.
+
+   Implementations MAY provide redaction or filtering capabilities
+   prior to sharing.
+
+7.2. Storage Security
+
+   Local storage within .git/trace/ inherits the filesystem
+   permissions of the repository.  Implementations SHOULD NOT
+   modify these permissions.
+
+8. References
+
+   [GIT-NOTES]  git-notes(1) Manual Page
+               https://git-scm.com/docs/git-notes
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119, March 1997.
+
+   [JSONL]     JSON Lines format
+               https://jsonlines.org/
+
+Authors' Address
+
+   Ted Nyman
+   Cased
+   https://github.com/tnm/git-atrace

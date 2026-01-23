@@ -1,0 +1,74 @@
+#!/bin/bash
+#/ git-atrace-hook - Capture AI coding sessions
+#/
+#/ Called by AI assistant post-tool hooks (Claude Code, OpenCode, Gemini CLI).
+#/ Reads JSON from stdin, copies conversation transcript to .git/trace/sessions/.
+#/
+#/ Requires: jq
+
+# Exit silently on errors (don't break Claude Code)
+set -e
+
+# Check for jq
+if ! command -v jq >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Read JSON input from stdin
+input=$(cat)
+
+# Exit if empty input
+if [ -z "$input" ]; then
+    exit 0
+fi
+
+# Extract fields individually (avoid eval)
+session_id=$(echo "$input" | jq -r '.session_id // empty' 2>/dev/null) || exit 0
+transcript_path=$(echo "$input" | jq -r '.transcript_path // empty' 2>/dev/null) || exit 0
+tool_name=$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
+file_path=$(echo "$input" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null) || exit 0
+
+# Only process file edit operations
+# Claude Code / OpenCode: Edit, Write, MultiEdit
+# Gemini CLI: write_file, replace, edit
+case "$tool_name" in
+    Edit|Write|MultiEdit|write_file|replace|edit) ;;
+    *) exit 0 ;;
+esac
+
+# Need session_id and transcript_path
+if [ -z "$session_id" ] || [ -z "$transcript_path" ]; then
+    exit 0
+fi
+
+# Find git root (resolve symlinks for consistent path matching)
+git_root=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" && pwd -P) || exit 0
+
+# Create sessions directory
+sessions_dir="$git_root/.git/trace/sessions"
+mkdir -p "$sessions_dir"
+
+# Copy transcript (full conversation history)
+if [ -f "$transcript_path" ]; then
+    cp "$transcript_path" "$sessions_dir/${session_id}.jsonl"
+fi
+
+# Track edited file
+if [ -n "$file_path" ]; then
+    # Resolve symlinks in directory for consistent matching (file may not exist yet)
+    dir_path=$(dirname "$file_path")
+    if [ -d "$dir_path" ]; then
+        file_path=$(cd "$dir_path" && pwd -P)/$(basename "$file_path")
+    fi
+    # Convert to repo-relative path for portability
+    rel_path="${file_path#$git_root/}"
+
+    files_list="$sessions_dir/${session_id}.files"
+    # Add if not already present
+    if ! grep -qxF "$rel_path" "$files_list" 2>/dev/null; then
+        echo "$rel_path" >> "$files_list"
+    fi
+fi
+
+# Record timestamp of last update
+date -u +%Y-%m-%dT%H:%M:%SZ > "$sessions_dir/${session_id}.timestamp"

@@ -1,0 +1,25 @@
+#!/bin/bash
+#/ git-atrace web viewer
+#/
+#/ Usage: ./start [port]
+#/
+#/ Starts the web UI at http://localhost:PORT (default 3000)
+
+set -e
+
+cd "$(dirname "$0")"
+
+case "${1:-}" in
+    help|-h|--help)
+        grep '^#/' <"$0" | cut -c4-
+        exit 0
+        ;;
+esac
+
+PORT="${1:-3000}"
+
+# Kill any existing server on that port
+lsof -ti:"$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+
+echo "Starting git-atrace viewer at http://localhost:$PORT"
+exec node server.js

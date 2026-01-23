@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Web app
+web/node_modules/
+web/dist/
+
+# Session data (private by default)
+.agents/sessions/
+
+# User-specific settings
+.claude/settings.json

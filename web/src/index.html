@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>git-atrace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h1 class="logo" id="logo">
+          <span class="logo-icon">&#9670;</span>
+          git-atrace
+        </h1>
+      </header>
+      <nav class="tabs">
+        <button class="tab active" data-tab="files">Files</button>
+        <button class="tab" data-tab="sessions">Sessions</button>
+      </nav>
+      <div class="tab-panel active" id="files-panel">
+        <ul class="file-tree" id="file-tree"></ul>
+      </div>
+      <div class="tab-panel" id="sessions-panel">
+        <ul class="session-list" id="session-list"></ul>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">&#9671;</div>
+        <h2>Select a file or session</h2>
+        <p>Files show source code with session attribution.<br>Sessions show the conversation that produced changes.</p>
+      </div>
+
+      <div class="view" id="file-view" hidden>
+        <header class="view-header">
+          <div class="breadcrumb" id="breadcrumb"></div>
+          <div class="view-actions">
+            <span class="file-meta" id="file-meta"></span>
+          </div>
+        </header>
+        <div class="code-container" id="code-container"></div>
+        <div class="file-sessions-panel" id="file-sessions-panel">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <span class="panel-count" id="file-sessions-count"></span>
+          </div>
+          <div class="panel-content" id="file-sessions-list"></div>
+        </div>
+      </div>
+
+      <div class="view" id="session-view" hidden>
+        <header class="view-header">
+          <div class="breadcrumb">
+            Session: <strong id="session-id-display"></strong>
+          </div>
+        </header>
+        <div class="session-container">
+          <div class="session-meta" id="session-meta">
+            <div class="session-files" id="session-files"></div>
+          </div>
+          <div class="conversation" id="conversation"></div>
+        </div>
+      </div>
+
+      <div class="view" id="diff-view" hidden>
+        <header class="view-header">
+          <div class="breadcrumb" id="diff-breadcrumb"></div>
+          <div class="view-actions">
+            <button class="btn btn-sm" id="diff-toggle">Split</button>
+          </div>
+        </header>
+        <div class="diff-container" id="diff-container"></div>
+      </div>
+    </main>
+  </div>
+
+  <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+    <span class="theme-icon">&#9790;</span>
+  </button>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

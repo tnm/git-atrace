@@ -1,0 +1,37 @@
+#!/bin/bash
+#
+# AfterTool hook for git-atrace (Gemini CLI)
+# Links the current session to commits made from within Gemini CLI
+#
+# Receives JSON via stdin with session_id, tool_name, tool_input
+# Also available as GEMINI_SESSION_ID env var
+
+set -e
+
+payload=$(cat)
+
+tool_name=$(echo "$payload" | jq -r '.tool_name // empty')
+command=$(echo "$payload" | jq -r '.tool_input.command // empty')
+session_id=$(echo "$payload" | jq -r '.session_id // empty')
+
+# Fallback to env var
+[ -z "$session_id" ] && session_id="$GEMINI_SESSION_ID"
+
+# Only process shell/bash tools
+echo "$tool_name" | grep -qiE 'shell|bash|execute' || exit 0
+echo "$command" | grep -qE 'git\s+(commit|cherry-pick|merge|revert)' || exit 0
+[ -n "$session_id" ] || exit 0
+
+# Find git-atrace
+GIT_ATRACE=""
+for path in \
+    "$(git rev-parse --show-toplevel 2>/dev/null)/git-atrace" \
+    "/usr/local/bin/git-atrace" \
+    "$HOME/.local/bin/git-atrace"; do
+    [ -x "$path" ] && GIT_ATRACE="$path" && break
+done
+[ -z "$GIT_ATRACE" ] && command -v git-atrace >/dev/null 2>&1 && GIT_ATRACE="git-atrace"
+[ -n "$GIT_ATRACE" ] || exit 0
+
+"$GIT_ATRACE" link "$session_id" HEAD >/dev/null 2>&1 &
+exit 0

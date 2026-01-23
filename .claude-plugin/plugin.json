@@ -1,0 +1,8 @@
+{
+  "name": "git-atrace",
+  "version": "1.0.0",
+  "description": "Capture AI coding sessions to understand intent",
+  "author": {"name": "Ted Nyman"},
+  "repository": "https://github.com/tnm/git-atrace",
+  "hooks": "./hooks/hooks.json"
+}

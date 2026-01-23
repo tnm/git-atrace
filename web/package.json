@@ -1,0 +1,29 @@
+{
+  "name": "git-atrace-web",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server.js"
+  },
+  "description": "Web viewer for git-atrace sessions",
+  "main": "server.js",
+  "keywords": [
+    "git",
+    "ai",
+    "sessions",
+    "attribution"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@pierre/diffs": "^1.0.8",
+    "shiki": "^3.21.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "vite": "^7.3.1"
+  }
+}

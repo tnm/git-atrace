@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace|edit",
+        "hooks": [
+          {
+            "name": "git-atrace",
+            "type": "command",
+            "command": "/path/to/git-atrace/git-atrace-hook",
+            "timeout": 30000
+          }
+        ]
+      },
+      {
+        "matcher": "shell|bash|execute",
+        "hooks": [
+          {
+            "name": "git-atrace-commit",
+            "type": "command",
+            "command": "/path/to/git-atrace/hooks/gemini/git-atrace-commit-hook",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}

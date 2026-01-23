@@ -1,0 +1,51 @@
+#!/bin/bash
+#
+# PostToolUse hook for git-atrace
+# Links the current session to commits made from within Claude Code
+#
+# Receives JSON via stdin with session_id, tool_name, tool_input
+
+set -e
+
+# Read JSON payload from stdin
+payload=$(cat)
+
+# Extract fields
+tool_name=$(echo "$payload" | jq -r '.tool_name // empty')
+command=$(echo "$payload" | jq -r '.tool_input.command // empty')
+session_id=$(echo "$payload" | jq -r '.session_id // empty')
+
+# Only process Bash tool
+[ "$tool_name" = "Bash" ] || exit 0
+
+# Only process git commit commands
+echo "$command" | grep -qE 'git\s+(commit|cherry-pick|merge|revert)' || exit 0
+
+# Need session_id
+[ -n "$session_id" ] || exit 0
+
+# Find git-atrace (check common locations)
+GIT_ATRACE=""
+for path in \
+    "$(git rev-parse --show-toplevel 2>/dev/null)/git-atrace" \
+    "/usr/local/bin/git-atrace" \
+    "$HOME/.local/bin/git-atrace"; do
+    if [ -x "$path" ]; then
+        GIT_ATRACE="$path"
+        break
+    fi
+done
+
+# Also check if it's in PATH
+if [ -z "$GIT_ATRACE" ] && command -v git-atrace >/dev/null 2>&1; then
+    GIT_ATRACE="git-atrace"
+fi
+
+[ -n "$GIT_ATRACE" ] || exit 0
+
+# Link session to the commit that was just made
+# Resolve HEAD now to avoid race if another commit lands before background runs
+commit_sha=$(git rev-parse HEAD 2>/dev/null) || exit 0
+"$GIT_ATRACE" link "$session_id" "$commit_sha" >/dev/null 2>&1 &
+
+exit 0
