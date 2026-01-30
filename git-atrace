@@ -5,17 +5,17 @@
 #/ Usage: git atrace <command> [args]
 #/
 #/ Commands:
-#/   git atrace                    List recent sessions
-#/   git atrace show <file>        Sessions that changed a file
-#/   git atrace view <session_id>  View full conversation
-#/   git atrace files <session_id> List files changed by a session
-#/   git atrace share <session_id> Share session (copy to tracked location)
-#/   git atrace delete <session_id> Delete a session
+#/   git atrace                             List recent sessions
+#/   git atrace show <file>                 Sessions that changed a file
+#/   git atrace view <session_id>           View full conversation
+#/   git atrace files <session_id>          List files changed by a session
+#/   git atrace share <session_id>          Share session (copy to tracked location)
+#/   git atrace delete <session_id>         Delete a session
 #/   git atrace link <session_id> [commit]  Link session to a commit (default HEAD)
-#/   git atrace log                Show commits with linked sessions
-#/   git atrace blame <file>       Show file with session attribution (like git blame)
-#/   git atrace export <session_id> Export session to Agent Trace spec format
-#/   git atrace import <file>      Import an Agent Trace spec file
+#/   git atrace log                         Show commits with linked sessions
+#/   git atrace blame <file>                Show file with session attribution (like git blame)
+#/   git atrace export <session_id>         Export session to Agent Trace spec format
+#/   git atrace import <file>               Import an Agent Trace spec file
 #/
 #/ Session IDs can be abbreviated (first 8 chars).
 #/
