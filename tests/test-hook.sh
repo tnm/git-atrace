@@ -101,5 +101,44 @@ else
     exit 1
 fi
 
+# Test 10: Commit hook regex matches git -C commands
+echo "Test 10: Commit hook regex matches git -C commands..."
+COMMIT_HOOK="$ROOT_DIR/git-atrace-commit-hook"
+
+# Create a test that checks the regex without actually running git
+test_commit_regex() {
+    local cmd="$1"
+    local expect="$2"  # "match" or "nomatch"
+
+    # Extract just the regex test from the hook
+    if echo "$cmd" | grep -qE 'git\s+.*\b(commit|cherry-pick|merge|revert)\b'; then
+        result="match"
+    else
+        result="nomatch"
+    fi
+
+    if [ "$result" = "$expect" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Should match
+test_commit_regex "git commit -m test" "match" || { echo "  FAIL: git commit"; exit 1; }
+test_commit_regex "git -C /path commit -m test" "match" || { echo "  FAIL: git -C commit"; exit 1; }
+test_commit_regex "git --no-pager commit" "match" || { echo "  FAIL: git --no-pager commit"; exit 1; }
+test_commit_regex "git -C /some/path cherry-pick abc123" "match" || { echo "  FAIL: git -C cherry-pick"; exit 1; }
+test_commit_regex "git merge feature-branch" "match" || { echo "  FAIL: git merge"; exit 1; }
+test_commit_regex "git -C /path revert HEAD" "match" || { echo "  FAIL: git -C revert"; exit 1; }
+
+# Should NOT match
+test_commit_regex "git status" "nomatch" || { echo "  FAIL: git status matched"; exit 1; }
+test_commit_regex "git log --oneline" "nomatch" || { echo "  FAIL: git log matched"; exit 1; }
+test_commit_regex "git add ." "nomatch" || { echo "  FAIL: git add matched"; exit 1; }
+test_commit_regex "git push origin main" "nomatch" || { echo "  FAIL: git push matched"; exit 1; }
+
+echo "  PASS"
+
 echo ""
 echo "All hook tests passed!"

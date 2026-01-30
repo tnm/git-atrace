@@ -19,7 +19,7 @@ session_id=$(echo "$payload" | jq -r '.session_id // empty')
 
 # Only process shell/bash tools
 echo "$tool_name" | grep -qiE 'shell|bash|execute' || exit 0
-echo "$command" | grep -qE 'git\s+(commit|cherry-pick|merge|revert)' || exit 0
+echo "$command" | grep -qE 'git\s+.*\b(commit|cherry-pick|merge|revert)\b' || exit 0
 [ -n "$session_id" ] || exit 0
 
 # Find git-atrace

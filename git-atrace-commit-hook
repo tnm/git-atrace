@@ -19,7 +19,7 @@ session_id=$(echo "$payload" | jq -r '.session_id // empty')
 [ "$tool_name" = "Bash" ] || exit 0
 
 # Only process git commit commands
-echo "$command" | grep -qE 'git\s+(commit|cherry-pick|merge|revert)' || exit 0
+echo "$command" | grep -qE 'git\s+.*\b(commit|cherry-pick|merge|revert)\b' || exit 0
 
 # Need session_id
 [ -n "$session_id" ] || exit 0
