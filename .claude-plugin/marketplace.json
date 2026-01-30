@@ -1,0 +1,13 @@
+{
+  "name": "git-atrace",
+  "owner": {
+    "name": "Ted Nyman"
+  },
+  "plugins": [
+    {
+      "name": "git-atrace",
+      "source": ".",
+      "description": "Capture AI coding sessions and link them to commits and lines"
+    }
+  ]
+}
