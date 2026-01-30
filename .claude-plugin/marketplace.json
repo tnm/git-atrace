@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "git-atrace",
-      "source": ".",
+      "source": "./",
       "description": "Capture AI coding sessions and link them to commits and lines"
     }
   ]
