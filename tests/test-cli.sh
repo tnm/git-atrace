@@ -355,5 +355,143 @@ fi
 git reset --hard HEAD~1 >/dev/null 2>&1
 git notes --ref=refs/notes/atrace remove "$COMMIT_SHA" 2>/dev/null || true
 
+# Test 24: CLI export produces valid Agent Trace JSON
+echo "Test 24: CLI export produces valid Agent Trace JSON..."
+echo '{"session_id": "export-test-session", "transcript_path": "'"$TRANSCRIPT"'", "tool_name": "Edit", "tool_input": {"file_path": "'"$TMPDIR"'/export.py"}}' | "$HOOK"
+echo "def hello(): pass" > "$TMPDIR/export.py"
+OUTPUT=$("$CLI" export export-test 2>&1)
+# Check required fields exist
+if echo "$OUTPUT" | jq -e '.version and .id and .timestamp and .files' >/dev/null 2>&1; then
+    echo "  PASS"
+else
+    echo "  FAIL: export should produce valid Agent Trace JSON with required fields"
+    echo "  Output: $OUTPUT"
+    exit 1
+fi
+
+# Test 25: CLI export includes correct file paths
+echo "Test 25: CLI export includes correct file paths..."
+if echo "$OUTPUT" | jq -e '.files[0].path' | grep -q "export.py"; then
+    echo "  PASS"
+else
+    echo "  FAIL: export should include file paths"
+    echo "  Output: $OUTPUT"
+    exit 1
+fi
+
+# Test 26: CLI export includes ranges with start_line and end_line
+echo "Test 26: CLI export includes ranges with line numbers..."
+if echo "$OUTPUT" | jq -e '.files[0].conversations[0].ranges[0].start_line' >/dev/null 2>&1; then
+    echo "  PASS"
+else
+    echo "  FAIL: export should include ranges with line numbers"
+    echo "  Output: $OUTPUT"
+    exit 1
+fi
+
+# Test 27: CLI export includes vcs info
+echo "Test 27: CLI export includes vcs info..."
+if echo "$OUTPUT" | jq -e '.vcs.type == "git" and .vcs.revision' >/dev/null 2>&1; then
+    echo "  PASS"
+else
+    echo "  FAIL: export should include vcs info"
+    echo "  Output: $OUTPUT"
+    exit 1
+fi
+
+# Test 28: CLI import creates session from Agent Trace file
+echo "Test 28: CLI import creates session from Agent Trace file..."
+IMPORT_FILE="$TMPDIR/import-test.json"
+cat > "$IMPORT_FILE" << 'IMPORT_EOF'
+{
+  "version": "0.1",
+  "id": "imported-session-12345",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "files": [
+    {
+      "path": "src/main.py",
+      "conversations": [{
+        "ranges": [{"start_line": 1, "end_line": 50}]
+      }]
+    }
+  ],
+  "vcs": {
+    "type": "git",
+    "revision": "abcd1234"
+  }
+}
+IMPORT_EOF
+"$CLI" import "$IMPORT_FILE" >/dev/null 2>&1
+if [ -f ".git/trace/sessions/imported-session-12345.jsonl" ]; then
+    echo "  PASS"
+else
+    echo "  FAIL: import should create session files"
+    exit 1
+fi
+
+# Test 29: CLI import creates .files manifest
+echo "Test 29: CLI import creates .files manifest..."
+if [ -f ".git/trace/sessions/imported-session-12345.files" ] && grep -q "src/main.py" ".git/trace/sessions/imported-session-12345.files"; then
+    echo "  PASS"
+else
+    echo "  FAIL: import should create .files manifest with paths"
+    exit 1
+fi
+
+# Test 30: CLI import creates .timestamp
+echo "Test 30: CLI import creates .timestamp..."
+if [ -f ".git/trace/sessions/imported-session-12345.timestamp" ] && grep -q "2024-01-15" ".git/trace/sessions/imported-session-12345.timestamp"; then
+    echo "  PASS"
+else
+    echo "  FAIL: import should create .timestamp with correct time"
+    exit 1
+fi
+
+# Test 31: Imported session appears in list
+echo "Test 31: Imported session appears in list..."
+OUTPUT=$("$CLI" 2>&1)
+if echo "$OUTPUT" | grep -q "imported"; then
+    echo "  PASS"
+else
+    echo "  FAIL: imported session should appear in list"
+    echo "  Output: $OUTPUT"
+    exit 1
+fi
+
+# Test 32: CLI export handles missing session
+echo "Test 32: CLI export handles missing session..."
+OUTPUT=$("$CLI" export nonexistent-session 2>&1) || true
+if echo "$OUTPUT" | grep -qi "not found"; then
+    echo "  PASS"
+else
+    echo "  FAIL: export should report session not found"
+    exit 1
+fi
+
+# Test 33: CLI import handles invalid file
+echo "Test 33: CLI import handles invalid file..."
+echo "not valid json" > "$TMPDIR/invalid.json"
+OUTPUT=$("$CLI" import "$TMPDIR/invalid.json" 2>&1) || true
+if echo "$OUTPUT" | grep -qi "invalid\|error"; then
+    echo "  PASS"
+else
+    echo "  FAIL: import should reject invalid JSON"
+    exit 1
+fi
+
+# Test 34: CLI import handles missing id field
+echo "Test 34: CLI import handles missing id field..."
+echo '{"version": "0.1", "files": []}' > "$TMPDIR/noid.json"
+OUTPUT=$("$CLI" import "$TMPDIR/noid.json" 2>&1) || true
+if echo "$OUTPUT" | grep -qi "missing\|invalid"; then
+    echo "  PASS"
+else
+    echo "  FAIL: import should reject file without id"
+    exit 1
+fi
+
+# Cleanup import test files
+rm -f .git/trace/sessions/imported-session-12345.*
+
 echo ""
 echo "All CLI tests passed!"

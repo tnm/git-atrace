@@ -14,6 +14,8 @@
 #/   git atrace link <session_id> [commit]  Link session to a commit (default HEAD)
 #/   git atrace log                Show commits with linked sessions
 #/   git atrace blame <file>       Show file with session attribution (like git blame)
+#/   git atrace export <session_id> Export session to Agent Trace spec format
+#/   git atrace import <file>      Import an Agent Trace spec file
 #/
 #/ Session IDs can be abbreviated (first 8 chars).
 #/
@@ -634,6 +636,176 @@ cmd_blame() {
     '
 }
 
+# Export session to Agent Trace spec format
+# See https://agent-trace.dev for spec details
+cmd_export() {
+    local session_id="$1"
+    if [ -z "$session_id" ]; then
+        echo "Usage: git atrace export <session_id>" >&2
+        exit 1
+    fi
+
+    # Check for jq
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "Error: jq is required for export" >&2
+        exit 1
+    fi
+
+    if ! find_session "$session_id" "jsonl"; then
+        echo "Session not found: $session_id" >&2
+        exit 1
+    fi
+
+    local root=$(git_root)
+    local files_file="${SESSION_FILE%.jsonl}.files"
+    local timestamp_file="${SESSION_FILE%.jsonl}.timestamp"
+
+    # Get timestamp
+    local timestamp=""
+    if [ -f "$timestamp_file" ]; then
+        timestamp=$(cat "$timestamp_file")
+    else
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    fi
+
+    # Get git revision (HEAD)
+    local revision=""
+    revision=$(git rev-parse HEAD 2>/dev/null) || revision=""
+
+    # Try to extract model info from session
+    local model_id=""
+    model_id=$(jq -r 'select(.model != null) | .model' "$SESSION_FILE" 2>/dev/null | head -1) || model_id=""
+    if [ -z "$model_id" ] || [ "$model_id" = "null" ]; then
+        # Try to infer from version field (Claude Code sessions have this)
+        local version=""
+        version=$(jq -r 'select(.version != null) | .version' "$SESSION_FILE" 2>/dev/null | head -1) || version=""
+        if [ -n "$version" ] && [ "$version" != "null" ]; then
+            model_id="anthropic/claude"
+        fi
+    fi
+
+    # Build files array
+    local files_json="[]"
+    if [ -f "$files_file" ]; then
+        files_json=$(while IFS= read -r filepath; do
+            [ -z "$filepath" ] && continue
+            # Get relative path
+            local rel_path="$filepath"
+            if [ "${filepath#/}" != "$filepath" ]; then
+                rel_path="${filepath#$root/}"
+            fi
+
+            # Get line count if file exists
+            local end_line=1
+            if [ -f "$root/$rel_path" ]; then
+                end_line=$(wc -l < "$root/$rel_path" | tr -d ' ')
+                [ "$end_line" -eq 0 ] && end_line=1
+            fi
+
+            # Build file object with conversation and ranges
+            jq -n \
+                --arg path "$rel_path" \
+                --argjson start 1 \
+                --argjson end "$end_line" \
+                --arg model "$model_id" \
+                '{
+                    path: $path,
+                    conversations: [{
+                        ranges: [{
+                            start_line: $start,
+                            end_line: $end,
+                            contributor: {
+                                type: "ai",
+                                model_id: (if $model != "" then $model else null end)
+                            }
+                        }]
+                    }]
+                }'
+        done < "$files_file" | jq -s '.')
+    fi
+
+    # Build the Agent Trace record
+    jq -n \
+        --arg version "0.1" \
+        --arg id "$SESSION_ID" \
+        --arg timestamp "$timestamp" \
+        --arg revision "$revision" \
+        --argjson files "$files_json" \
+        '{
+            version: $version,
+            id: $id,
+            timestamp: $timestamp,
+            files: $files,
+            vcs: {
+                type: "git",
+                revision: $revision
+            },
+            tool: {
+                name: "git-atrace",
+                version: "0.1.0"
+            }
+        }'
+}
+
+# Import an Agent Trace spec file
+cmd_import() {
+    local input_file="$1"
+    if [ -z "$input_file" ]; then
+        echo "Usage: git atrace import <file>" >&2
+        exit 1
+    fi
+
+    if [ ! -f "$input_file" ]; then
+        echo "File not found: $input_file" >&2
+        exit 1
+    fi
+
+    # Check for jq
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "Error: jq is required for import" >&2
+        exit 1
+    fi
+
+    # Validate and extract fields
+    local session_id timestamp revision
+    session_id=$(jq -r '.id // empty' "$input_file" 2>/dev/null) || session_id=""
+    if [ -z "$session_id" ]; then
+        echo "Error: Invalid Agent Trace file (missing 'id' or invalid JSON)" >&2
+        exit 1
+    fi
+
+    timestamp=$(jq -r '.timestamp // empty' "$input_file" 2>/dev/null)
+    if [ -z "$timestamp" ]; then
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    fi
+
+    revision=$(jq -r '.vcs.revision // empty' "$input_file" 2>/dev/null)
+
+    local local_dir=$(local_sessions)
+    mkdir -p "$local_dir"
+
+    # Extract file paths
+    jq -r '.files[]?.path // empty' "$input_file" > "$local_dir/${session_id}.files" 2>/dev/null
+
+    # Write timestamp
+    echo "$timestamp" > "$local_dir/${session_id}.timestamp"
+
+    # Create minimal JSONL (store the original trace as metadata)
+    jq -c '{type: "import", timestamp: .timestamp, source: "agent-trace", trace: .}' "$input_file" \
+        > "$local_dir/${session_id}.jsonl"
+
+    echo -e "Imported session: ${CYAN}$(short_id "$session_id")${RESET}"
+
+    # Link to commit if revision is provided and exists
+    if [ -n "$revision" ]; then
+        if git rev-parse "$revision" >/dev/null 2>&1; then
+            cmd_link "$session_id" "$revision"
+        else
+            echo "  (commit $revision not found, skipping link)"
+        fi
+    fi
+}
+
 # Main
 case "${1:-list}" in
     list|"")
@@ -663,11 +835,17 @@ case "${1:-list}" in
     blame)
         cmd_blame "$2"
         ;;
+    export)
+        cmd_export "$2"
+        ;;
+    import)
+        cmd_import "$2"
+        ;;
     help)
         grep '^#/' <"$0" | cut -c4-
         ;;
     *)
-        echo "Usage: git atrace [list|show|view|files|share|delete|link|log|blame|help]"
+        echo "Usage: git atrace [list|show|view|files|share|delete|link|log|blame|export|import|help]"
         echo "Run 'git atrace help' for more information."
         exit 1
         ;;

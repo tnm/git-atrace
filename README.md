@@ -159,6 +159,22 @@ git atrace delete 3ea80c57
 
 Removes the session (checks local first, then shared).
 
+### Export a session
+
+```bash
+git atrace export 3ea80c57 > session.json
+```
+
+Exports to [Agent Trace spec](https://agent-trace.dev) format for interoperability.
+
+### Import a session
+
+```bash
+git atrace import session.json
+```
+
+Imports an Agent Trace spec file as a local session.
+
 ### Link a session to a commit
 
 ```bash
@@ -325,6 +341,43 @@ Options:
 - **Local by default**: Sessions are private until explicitly shared
 - **AI tool hooks**: Uses AI tool hooks (PostToolUse), not git hooks
 - **Simple**: No dependencies beyond bash and jq, rule of least power
+
+## Agent Trace Spec Compatibility
+
+git-atrace supports the [Agent Trace spec](https://agent-trace.dev) for interoperability with other tools.
+
+### Export to Agent Trace format
+
+```bash
+git atrace export 3ea80c57 > session.json
+```
+
+Produces spec-compliant JSON with:
+- `version`, `id`, `timestamp` (required fields)
+- `files[]` with `path`, `conversations[]`, `ranges[]`
+- `vcs.type` and `vcs.revision` (git SHA)
+- `contributor.type` ("ai") and `model_id` when available
+
+### Import from Agent Trace format
+
+```bash
+git atrace import session.json
+```
+
+Creates a local session from an Agent Trace file:
+- Extracts file paths to `.files` manifest
+- Preserves timestamp
+- Links to commit if `vcs.revision` exists locally
+
+### Format differences
+
+git-atrace stores sessions as JSONL transcripts (conversation-centric), while Agent Trace spec is line-centric (ranges within files). The export command bridges this by:
+
+1. Using the whole file as a single range (start_line: 1, end_line: N)
+2. Setting contributor type to "ai"
+3. Including model_id when extractable from session metadata
+
+For more precise line-level attribution, use `git atrace blame` which traces lines through git blame → commit → session.
 
 ## Specification
 
